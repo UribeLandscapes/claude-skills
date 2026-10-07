@@ -58,12 +58,20 @@ python3 skills/unslop-ui/scripts/devibe_scan.py path/to/site --severity high
 
 Treat what they report as a list of places to look. Some hits will be fine in context, and the deeper problems the skills describe need a person reading the diff.
 
-## Other skills I use
+## Third-party skills
 
-I also run a few skills written by other people. They live in their own repos, so go get them from the source: [humanizer](https://github.com/blader/humanizer), which I used to write this README, and [napkin](https://github.com/blader/napkin).
+| Skill | Author | Source | License |
+|---|---|---|---|
+| [continuous-learning-v2](third-party/affaan-m/ECC/continuous-learning-v2) | Affaan Mustafa | [ECC](https://github.com/affaan-m/ECC) | MIT |
+| [caveman](third-party/JuliusBrussee/caveman/caveman) | Julius Brussee | [caveman](https://github.com/JuliusBrussee/caveman) | MIT |
+| [humanizer](third-party/blader/humanizer) | Siqi Chen | [humanizer](https://github.com/blader/humanizer) | MIT |
+| [napkin](third-party/blader/napkin) | blader | [napkin](https://github.com/blader/napkin) | MIT |
+| [skill-creator](third-party/anthropics/skills/skill-creator) | Anthropic | [skills](https://github.com/anthropics/skills/tree/main/skills/skill-creator) | Apache-2.0 |
+
+I used humanizer to write this README. I also use about 198 uncustomized ECC skills as-is; see the [ECC skills folder](https://github.com/affaan-m/ECC/tree/main/skills). The continuous-learning-v2 copy needs its hook wiring; see upstream for install. Changes from upstream are listed in the CHANGES.md in each author folder under [third-party](third-party/).
 
 The agents I use alongside these skills are in a separate repo: [claude-agents](https://github.com/UribeLandscapes/claude-agents).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT for my own skills. Files under [third-party](third-party/) keep their authors' licenses.

@@ -60,14 +60,23 @@ Treat what they report as a list of places to look. Some hits will be fine in co
 
 ## Third-party skills
 
+I changed these two, so copies live under [third-party](third-party/) with their authors' licenses. Each author folder has a CHANGES.md listing what differs from upstream.
+
 | Skill | Author | Source | License |
 |---|---|---|---|
-| [continuous-learning-v2](third-party/affaan-m/ECC/continuous-learning-v2) | Affaan Mustafa | [ECC](https://github.com/affaan-m/ECC) | MIT |
 | [caveman](third-party/JuliusBrussee/caveman/caveman) | Julius Brussee | [caveman](https://github.com/JuliusBrussee/caveman) | MIT |
-| [humanizer](third-party/blader/humanizer) | Siqi Chen | [humanizer](https://github.com/blader/humanizer) | MIT |
 | [napkin](third-party/blader/napkin) | blader | [napkin](https://github.com/blader/napkin) | MIT |
 
-I used humanizer to write this README. I also use Anthropic's skill-creator (Apache-2.0) and about 198 uncustomized ECC skills as-is. Those are linked, not copied; see the [skill-creator source](https://github.com/anthropics/skills/tree/main/skills/skill-creator) and the [ECC skills folder](https://github.com/affaan-m/ECC/tree/main/skills). The continuous-learning-v2 copy needs its hook wiring; see upstream for install. Changes from upstream are listed in the CHANGES.md in each author folder under [third-party](third-party/).
+I use these as-is, so they are linked rather than copied:
+
+| Skill | Author | Source | License |
+|---|---|---|---|
+| continuous-learning-v2 | Affaan Mustafa | [ECC](https://github.com/affaan-m/ECC/tree/main/skills/continuous-learning-v2) | MIT |
+| humanizer | Siqi Chen | [humanizer](https://github.com/blader/humanizer) | MIT |
+| skill-creator | Anthropic | [skills](https://github.com/anthropics/skills/tree/main/skills/skill-creator) | Apache-2.0 |
+| about 198 other ECC skills | Affaan Mustafa | [ECC skills folder](https://github.com/affaan-m/ECC/tree/main/skills) | MIT |
+
+I used humanizer to write this README.
 
 The agents I use alongside these skills are in a separate repo: [claude-agents](https://github.com/UribeLandscapes/claude-agents).
 

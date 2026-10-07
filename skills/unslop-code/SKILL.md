@@ -125,8 +125,8 @@ python3 scripts/unslop_code_scan.py <path> --json          # machine-readable, f
 
 It scans Python, JS/TS, Java, Go, Rust, Ruby, PHP, C/C++, C#, and more; reports each finding
 with file, line, the matched text, the severity, the class (bug or cosmetic), the data share it
-carries, and the fix; and gives a slop score. The exit code is the high-severity count, so CI
-can gate on it. Severity is how loudly a finding reads as AI; class is whether it is broken. Fix
+carries, and the fix; and gives a slop score. The exit code is 1 when any high-severity finding exists, 0 otherwise
+(counts are in the report / JSON). Severity is how loudly a finding reads as AI; class is whether it is broken. Fix
 every bug-class finding regardless of severity.
 
 **3. Read the diff for what neither step can see:** tutorial shape, over-engineering, and

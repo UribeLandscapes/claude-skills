@@ -13,7 +13,7 @@ Usage:
     python3 devibe_scan.py <path> --json          # machine-readable (for CI)
     python3 devibe_scan.py <path> --max 8         # cap examples shown per rule
 
-Exit code is the number of HIGH-severity findings (0 = none), so CI can gate on it.
+Exit code is 1 when any HIGH-severity finding exists, 0 otherwise; counts are in the report / JSON.
 """
 import os, re, sys, json, argparse
 
@@ -107,7 +107,7 @@ def iter_files(path):
         for f in files:
             if f.endswith(".min.js") or f.endswith(".min.css"):
                 continue
-            if os.path.splitext(f)[1].lower() in EXTS:
+            if f == "components.json" or os.path.splitext(f)[1].lower() in EXTS:
                 yield os.path.join(root, f)
 
 def scan(path, min_sev):
@@ -135,6 +135,9 @@ def scan(path, min_sev):
                                          "snippet": line.strip()[:160]})
                         break
     return findings
+
+def finding_exit_code(by_sev):
+    return int(by_sev.get("high", 0) > 0)
 
 def verdict(by_sev, weighted):
     if by_sev.get("high", 0) >= 3 or weighted >= 15:
@@ -170,7 +173,7 @@ def main():
         print(json.dumps({"path": args.path, "files_scanned": files_scanned,
                           "counts": by_sev, "vibe_score": weighted,
                           "verdict": verdict(by_sev, weighted), "findings": findings}, indent=2))
-        sys.exit(by_sev.get("high", 0))
+        sys.exit(finding_exit_code(by_sev))
 
     sev_order = {"high": 0, "medium": 1, "low": 2}
     rule_ids = sorted(by_rule, key=lambda rid: (sev_order[by_rule[rid][0]["sev"]], -len(by_rule[rid])))
@@ -196,7 +199,7 @@ def main():
     top = [by_rule[rid][0]['label'] for rid in rule_ids[:3]]
     print("  Top things to change: " + "; ".join(top))
     print("  Layout and motion tells need eyes too. See references/tells.md.\n")
-    sys.exit(by_sev.get("high", 0))
+    sys.exit(finding_exit_code(by_sev))
 
 if __name__ == "__main__":
     main()

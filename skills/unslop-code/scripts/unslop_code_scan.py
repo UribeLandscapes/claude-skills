@@ -43,7 +43,7 @@ Usage:
     python3 unslop_code_scan.py <path> --max 8         # cap examples shown per rule
 
 A line containing  unslop-ignore  is skipped, for a pattern you are using on purpose.
-Exit code is the number of HIGH-severity findings (0 = none), so CI can gate on it.
+Exit code is 1 when any HIGH-severity finding exists, 0 otherwise; counts are in the report / JSON.
 """
 import os, re, sys, json, argparse
 
@@ -96,7 +96,7 @@ RULES = [
     {"id": "swallowed-errors", "label": "Catch-all / swallowed errors (bare except, empty catch, empty Go err block)", "sev": "medium", "class": "bug",
      "share": "verified 3.1% (try/except wrapped around everything)",
      "fix": "Catch specific exceptions and handle them. A bare except, an empty catch, or an empty `if err != nil {}` eats the one clue you needed.",
-     "pats": [r"^\s*except\s*:", r"^\s*except\s+(Exception|BaseException)\s*:\s*(pass|\.\.\.|$)",
+     "pats": [r"^\s*except\s*:", r"^\s*except\s+(Exception|BaseException)(?:\s+as\s+\w+)?\s*:",
               r"\bcatch\s*\([^)]*\)\s*\{\s*\}", r"\bcatch\s*\{\s*\}",
               r"\brescue\s*=>\s*\w+\s*$", r"\bcatch\s*\([^)]*\)\s*\{\s*//",
               r"\bif\s+err\s*!=\s*nil\s*\{\s*\}", r"\bif\s+err\s*!=\s*nil\s*\{\s*//"]},
@@ -150,6 +150,29 @@ def iter_files(path):
             if os.path.splitext(f)[1].lower() in EXTS:
                 yield os.path.join(root, f)
 
+def empty_exception_handler(lines, index):
+    line = lines[index]
+    match = re.match(
+        r"^([ \t]*)except\s+(Exception|BaseException)(?:\s+as\s+\w+)?\s*:(.*)$",
+        line,
+    )
+    if not match:
+        return True  # Other swallowed-error patterns keep their existing behavior.
+    inline = match.group(3).split("#", 1)[0].strip()
+    if inline:
+        return inline in {"pass", "..."}
+    indent = len(match.group(1).expandtabs())
+    for following in lines[index + 1:]:
+        body = following.split("#", 1)[0].strip()
+        if not body:
+            continue
+        prefix = following[:len(following) - len(following.lstrip())]
+        if len(prefix.expandtabs()) <= indent:
+            break
+        if body not in {"pass", "..."}:
+            return False
+    return True
+
 def scan(path, min_sev):
     rules = compile_rules(min_sev)
     findings = []
@@ -168,12 +191,17 @@ def scan(path, min_sev):
                 for rx in r["rx"]:
                     m = rx.search(line)
                     if m:
+                        if r["id"] == "swallowed-errors" and not empty_exception_handler(lines, i - 1):
+                            continue
                         findings.append({"rule": r["id"], "label": r["label"], "sev": r["sev"],
                                          "class": r["class"], "share": r["share"], "fix": r["fix"],
                                          "file": fp, "line": i,
                                          "match": m.group(0).strip()[:50], "snippet": line.strip()[:160]})
                         break
     return findings
+
+def finding_exit_code(by_sev):
+    return int(by_sev.get("high", 0) > 0)
 
 def verdict(by_sev, weighted):
     if by_sev.get("high", 0) >= 3 or weighted >= 15:
@@ -209,7 +237,7 @@ def main():
         print(json.dumps({"path": args.path, "files_scanned": files_scanned, "counts": by_sev,
                           "class_counts": by_class, "slop_score": weighted,
                           "verdict": verdict(by_sev, weighted), "findings": findings}, indent=2))
-        sys.exit(by_sev.get("high", 0))
+        sys.exit(finding_exit_code(by_sev))
 
     sev_order = {"high": 0, "medium": 1, "low": 2}
     rule_ids = sorted(by_rule, key=lambda rid: (sev_order[by_rule[rid][0]["sev"]], -len(by_rule[rid])))
@@ -241,7 +269,7 @@ def main():
     print("  Fix the bug-class findings first; they are wrong, not just AI-looking.")
     print("  The big tells (boilerplate, hallucinated APIs, over-engineering) the regex cannot see:")
     print("  build / type-check / run for the hallucinated calls, read the diff for the rest. See references/tells.md.\n")
-    sys.exit(by_sev.get("high", 0))
+    sys.exit(finding_exit_code(by_sev))
 
 if __name__ == "__main__":
     main()

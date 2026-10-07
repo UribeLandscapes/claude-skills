@@ -101,8 +101,8 @@ python3 scripts/devibe_scan.py <path> --json          # machine-readable, for CI
 ```
 
 It scans .html .css .scss .js .jsx .ts .tsx .vue .svelte .astro, reports each finding
-with file, line, and fix, and gives a vibe score. Exit code is the high-severity count,
-so CI can gate on it. The scanner catches the mechanical tells (colors, fonts,
+with file, line, and fix, and gives a vibe score. Exit code is 1 when any high-severity finding exists,
+0 otherwise (counts are in the report / JSON). The scanner catches the mechanical tells (colors, fonts,
 gradients, the cream+serif combo). It cannot see layout coherence, spacing consistency,
 or whether text overflows its container, and those are also what make a site read as AI,
 so after the scan, check those by eye against the catalog.

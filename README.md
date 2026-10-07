@@ -66,9 +66,8 @@ Treat what they report as a list of places to look. Some hits will be fine in co
 | [caveman](third-party/JuliusBrussee/caveman/caveman) | Julius Brussee | [caveman](https://github.com/JuliusBrussee/caveman) | MIT |
 | [humanizer](third-party/blader/humanizer) | Siqi Chen | [humanizer](https://github.com/blader/humanizer) | MIT |
 | [napkin](third-party/blader/napkin) | blader | [napkin](https://github.com/blader/napkin) | MIT |
-| [skill-creator](third-party/anthropics/skills/skill-creator) | Anthropic | [skills](https://github.com/anthropics/skills/tree/main/skills/skill-creator) | Apache-2.0 |
 
-I used humanizer to write this README. I also use about 198 uncustomized ECC skills as-is; see the [ECC skills folder](https://github.com/affaan-m/ECC/tree/main/skills). The continuous-learning-v2 copy needs its hook wiring; see upstream for install. Changes from upstream are listed in the CHANGES.md in each author folder under [third-party](third-party/).
+I used humanizer to write this README. I also use Anthropic's skill-creator (Apache-2.0) and about 198 uncustomized ECC skills as-is. Those are linked, not copied; see the [skill-creator source](https://github.com/anthropics/skills/tree/main/skills/skill-creator) and the [ECC skills folder](https://github.com/affaan-m/ECC/tree/main/skills). The continuous-learning-v2 copy needs its hook wiring; see upstream for install. Changes from upstream are listed in the CHANGES.md in each author folder under [third-party](third-party/).
 
 The agents I use alongside these skills are in a separate repo: [claude-agents](https://github.com/UribeLandscapes/claude-agents).
 

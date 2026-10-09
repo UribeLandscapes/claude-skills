@@ -20,9 +20,14 @@ names.
 
 Two axes, not one. Severity is how loudly a finding reads as an AI tell (how conclusive it is
 when present). Class is whether it is a bug or a cosmetic. They are independent: a swallowed
-error is a quiet tell but a real bug; an emoji is a loud tell but harmless. Fix every bug-class
-finding because it is wrong, not because it looks AI-written; treat the cosmetic ones as the
-lighter pass.
+error is a quiet tell but a real bug; an emoji is a loud tell but harmless. Findings are leads,
+not verdicts: read each bug-class one and fix the ones that really hide a failure; treat the
+cosmetic ones as the lighter pass.
+
+Precision. Severity `info` (weight 0, not in score, verdict or exit code) holds weak signals and
+is hidden unless you pass --severity info. Python files are parsed: text inside a multi-line
+string (docstring examples) is not flagged, and swallowed handlers are judged on the AST. See
+references/precision.md for measured before/after numbers and the known limits.
 
 The highest-impact bug, hallucinated APIs, is invisible to this scanner. Catch it the way only
 code allows: build it, type-check it, run it, resolve every import and call against real docs.
@@ -39,20 +44,27 @@ fn / fun / sub.
 Usage:
     python3 unslop_code_scan.py <path>                 # scan a dir or file
     python3 unslop_code_scan.py <path> --severity high # only the strongest signals
+    python3 unslop_code_scan.py <path> --severity info # also show the weak (info) signals
     python3 unslop_code_scan.py <path> --json          # machine-readable (for CI)
     python3 unslop_code_scan.py <path> --max 8         # cap examples shown per rule
 
 A line containing  unslop-ignore  is skipped, for a pattern you are using on purpose.
 Exit code is 1 when any HIGH-severity finding exists, 0 otherwise; counts are in the report / JSON.
+Verdict is density-based (weighted score per file scanned) so a big clean tree is not drowned out.
 """
 import os, re, sys, json, argparse
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # find _py_ast under -I / any cwd
+import _py_ast
 
 EXTS = {".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".go", ".rs", ".rb", ".php",
         ".c", ".h", ".cpp", ".cc", ".hpp", ".cs", ".kt", ".kts", ".swift", ".scala",
         ".m", ".mm", ".sh", ".bash", ".lua", ".dart", ".vue", ".svelte", ".sql", ".r"}
 SKIP_DIRS = {"node_modules", ".git", "dist", "build", ".next", "out", "vendor", "target",
              "coverage", ".venv", "venv", "__pycache__", ".idea", ".gradle", "bin", "obj"}
-W = {"high": 3, "medium": 2, "low": 1}
+W = {"high": 3, "medium": 2, "low": 1, "info": 0}
+ORDER = ["high", "medium", "low", "info"]
+STRING_KEEP = {"emoji-in-code", "boilerplate-marker"}   # still flagged inside Python strings
+MAX_LINE, MEAN_LINE = 1000, 200   # generated/minified file thresholds
 CMT = r"(?://|#|/\*|\*|--|<!--)"   # comment openers across common languages
 EMOJI = ("\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F0FF"
          "\U00002B00-\U00002BFF\U0001F900-\U0001F9FF\U00002764")
@@ -73,7 +85,6 @@ RULES = [
      "pats": [r"^\s*```", r"\bhere'?s the (updated|complete|full|fixed|revised|new) (code|version|implementation|file)\b",
               r"\bas an? (ai|a\.i\.) (language )?model\b", r"\bas a large language model\b",
               r"\b(good|great) catch!", r"\byou'?re absolutely right\b",
-              r"^\s*" + CMT + r"\s*(note|remember|important|keep in mind|tip)\s*:",
               r"\b(certainly|sure)! here('?s| is)\b", r"\bi'?ll (add|update|fix|implement) .{0,40}\bnow\b",
               r"\bi hope this helps\b", r"\blet me know if you'?d?\s*(like|need|want)\b"]},
     {"id": "placeholder-comment", "label": "Placeholder / ellipsis comment left in (\"// rest of your code\")", "sev": "high", "class": "bug",
@@ -86,7 +97,8 @@ RULES = [
               r"" + CMT + r"\s*(implementation|code|logic) (goes |go )?here\b",
               r"" + CMT + r"\s*existing code (here|unchanged|stays|remains)\b",
               r"" + CMT + r"\s*\.\.\. ?\((?:rest|your|the|existing)[^)]*\)",
-              r"" + CMT + r"\s*TODO:?\s*(implement|add|fill in|finish)\b"]},
+              r"" + CMT + r"\s*TODO:?\s*(implement|add|fill in|finish)"
+              r"(\s+(this|here|me|it|the rest|the logic|the implementation|the code))?\s*[.!]?\s*(\*/|-->)?\s*$"]},
 
     # ---------- MEDIUM: the surface tells ----------
     {"id": "emoji-in-code", "label": "Emoji in code, comments, strings, logs, or commit text", "sev": "medium", "class": "cosmetic",
@@ -104,7 +116,6 @@ RULES = [
      "share": "verified 8.5% (over-commenting; the regex catches the obvious-restatement subset)",
      "fix": "Cut comments that say what the next line plainly does. Comment why, not what.",
      "pats": [r"" + CMT + r"\s*(step\s*\d+\b|now we\b|first,|next,|then,|finally,)",
-              r"" + CMT + r"\s*(increment|decrement|initialize|declare|define|create|instantiate|loop (over|through)|iterate over|return the|set the|get the|assign|call the)\b",
               r"" + CMT + r"\s*this (function|method|line|loop|variable|class|block) (does|is|will|handles|returns|creates)\b",
               r"" + CMT + r"\s*(import|importing) (the |required )?(libraries|modules|dependencies)\b"]},
     {"id": "generic-naming", "label": "Generic placeholder function name (process_data, handleData, doStuff)", "sev": "medium", "class": "cosmetic",
@@ -114,7 +125,15 @@ RULES = [
               r"\b(process_?[Dd]ata|handle_?[Dd]ata|do_?[Ss]tuff|do_?[Ss]omething)\s*\("]},
 
     # ---------- LOW: weak / inflated signals ----------
-    {"id": "verbose-naming", "label": "Over-verbose, robotically self-documenting identifier", "sev": "low", "class": "cosmetic",
+    {"id": "narrating-comment-weak", "label": "Comment opening with a verb (# Create the client); common in human code", "sev": "info", "class": "cosmetic",
+     "share": "weak: measured mostly human on adk-python; kept as a lead only",
+     "fix": "Cut it only if it restates the next line; verb-first comments are often fine.",
+     "pats": [r"" + CMT + r"\s*(increment|decrement|initialize|declare|define|create|instantiate|loop (over|through)|iterate over|return the|set the|get the|assign|call the)\b"]},
+    {"id": "note-comment", "label": "'# Note:' / 'Remember:' / 'Important:' comment", "sev": "info", "class": "cosmetic",
+     "share": "weak: ordinary in human code (24 of 24 on adk-python were human)",
+     "fix": "Fine when it carries a real caveat; delete it when it only chats.",
+     "pats": [r"^\s*" + CMT + r"\s*(note|remember|important|keep in mind|tip)\s*:"]},
+    {"id": "verbose-naming", "label": "Over-verbose, robotically self-documenting identifier", "sev": "info", "class": "cosmetic",
      "share": "verified 0.4% (inflated; people mostly argue FOR descriptive names)", "cs": True,
      "fix": "A name that is a whole sentence (getUserDataFromApiResponseHandler) reads as machine-generated. Trim it.",
      "pats": [r"\b[a-z]+([A-Z][a-z0-9]+){4,}\b", r"\b[a-z]+(_[a-z0-9]+){5,}\b"]},
@@ -126,13 +145,9 @@ RULES = [
               r"(console\.log|print|println|fmt\.Print\w*|System\.out\.print\w*)\s*\(\s*['\"](✅|🚀|Successfully|Done!|Here we go)"]},
 ]
 
-def compile_rules(min_sev):
-    order = ["high", "medium", "low"]
-    floor = order.index(min_sev) if min_sev else len(order) - 1
+def compile_rules():
     out = []
     for r in RULES:
-        if order.index(r["sev"]) > floor:
-            continue
         r = dict(r)
         flags = 0 if r.get("cs") else re.IGNORECASE
         r["rx"] = [re.compile(p, flags) for p in r["pats"]]
@@ -145,7 +160,7 @@ def iter_files(path):
     for root, dirs, files in os.walk(path):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
         for f in files:
-            if f.endswith(".min.js") or f.endswith(".min.css") or f.endswith(".map"):
+            if f.endswith(".map"):
                 continue
             if os.path.splitext(f)[1].lower() in EXTS:
                 yield os.path.join(root, f)
@@ -173,79 +188,96 @@ def empty_exception_handler(lines, index):
             return False
     return True
 
-def scan(path, min_sev):
-    rules = compile_rules(min_sev)
-    findings = []
+def is_generated(fp, lines):
+    """Minified / bundled output: `.min.` in the name, or very long lines on average."""
+    if ".min." in os.path.basename(fp).lower():
+        return True
+    if not lines:
+        return False
+    return max(len(l) for l in lines) > MAX_LINE and sum(len(l) for l in lines) / len(lines) > MEAN_LINE
+
+def make(r, fp, line_no, match, line, sev=None, reason=None):
+    f = {"rule": r["id"], "label": r["label"], "sev": sev or r["sev"], "class": r["class"],
+         "share": r["share"], "fix": r["fix"], "file": fp, "line": line_no,
+         "match": match.strip()[:50], "snippet": line.strip()[:160]}
+    if reason:
+        f["reason"] = reason
+    return f
+
+def first_hit(r, line, line_no, spans):
+    """First regex match of rule r on the line that is not inside a Python string literal."""
+    for rx in r["rx"]:
+        for m in rx.finditer(line):
+            start = m.start() + len(m.group(0)) - len(m.group(0).lstrip())
+            if spans and r["id"] not in STRING_KEEP and _py_ast.in_string(spans, line_no, line, start):
+                continue
+            return m
+    return None
+
+def scan_file(fp, lines, rules):
+    # shortcut: non-Python files have no string/AST awareness; a ``` inside a JS template
+    # literal is still flagged. Upgrade trigger: a stdlib-only JS tokenizer, or a real parser.
+    tree = _py_ast.parse(lines) if fp.endswith(".py") else None
+    spans = _py_ast.string_spans(tree) if tree else []
+    by_id = {r["id"]: r for r in rules}
+    out = []
+    for i, line in enumerate(lines, 1):
+        if "unslop-ignore" in line.lower():
+            continue
+        for r in rules:
+            if tree and r["id"] == "swallowed-errors":
+                continue
+            m = first_hit(r, line, i, spans)
+            if m and not (r["id"] == "swallowed-errors" and not empty_exception_handler(lines, i - 1)):
+                out.append(make(r, fp, i, m.group(0), line))
+    if tree:
+        for ln, sev, why in _py_ast.swallowed(tree, lines):
+            if "unslop-ignore" not in lines[ln - 1].lower():
+                out.append(make(by_id["swallowed-errors"], fp, ln, lines[ln - 1].split(":")[0], lines[ln - 1], sev, why))
+    return out
+
+def scan(path):
+    """-> (all findings incl. info, files_scanned, files_skipped_generated)."""
+    rules = compile_rules()
+    findings, scanned, skipped = [], 0, 0
     for fp in iter_files(path):
         try:
             with open(fp, "r", encoding="utf-8", errors="ignore") as fh:
                 lines = fh.readlines()
         except Exception:
             continue
-        if len(lines) == 1 and len(lines[0]) > 5000:   # likely minified
+        if is_generated(fp, lines):
+            skipped += 1
             continue
-        for i, line in enumerate(lines, 1):
-            if "unslop-ignore" in line.lower():
-                continue
-            for r in rules:
-                for rx in r["rx"]:
-                    m = rx.search(line)
-                    if m:
-                        if r["id"] == "swallowed-errors" and not empty_exception_handler(lines, i - 1):
-                            continue
-                        findings.append({"rule": r["id"], "label": r["label"], "sev": r["sev"],
-                                         "class": r["class"], "share": r["share"], "fix": r["fix"],
-                                         "file": fp, "line": i,
-                                         "match": m.group(0).strip()[:50], "snippet": line.strip()[:160]})
-                        break
-    return findings
+        scanned += 1
+        findings.extend(scan_file(fp, lines, rules))
+    return sorted(findings, key=lambda f: (f["file"], f["line"])), scanned, skipped
 
 def finding_exit_code(by_sev):
     return int(by_sev.get("high", 0) > 0)
 
-def verdict(by_sev, weighted):
-    if by_sev.get("high", 0) >= 3 or weighted >= 15:
+def verdict(by_sev, density):
+    high = by_sev.get("high", 0)
+    if high >= 3 or density >= 1.0:
         return "STRONG AI-written-code tells"
-    if by_sev.get("high", 0) >= 1 or weighted >= 6:
+    if high >= 1 or density >= 0.3:
         return "Some AI tells present"
-    if weighted > 0:
+    if density > 0:
         return "Mostly clean, minor tells"
     return "Clean, no surface tells detected"
 
-def main():
-    ap = argparse.ArgumentParser(description="Scan source code for AI-written-code tells.")
-    ap.add_argument("path")
-    ap.add_argument("--severity", choices=["high", "medium", "low"], default="low",
-                    help="minimum severity to report (default: low = everything)")
-    ap.add_argument("--json", action="store_true", help="machine-readable output")
-    ap.add_argument("--max", type=int, default=10, help="max examples shown per rule (text mode)")
-    args = ap.parse_args()
-
-    if not os.path.exists(args.path):
-        print(f"path not found: {args.path}", file=sys.stderr); sys.exit(2)
-
-    findings = scan(args.path, args.severity)
-    by_sev, by_class, by_rule = {}, {}, {}
+def print_report(args, findings, by_sev, by_class, weighted, density, scanned, skipped, hidden):
+    groups = {}
     for f in findings:
-        by_sev[f["sev"]] = by_sev.get(f["sev"], 0) + 1
-        by_class[f["class"]] = by_class.get(f["class"], 0) + 1
-        by_rule.setdefault(f["rule"], []).append(f)
-    weighted = sum(W[s] * n for s, n in by_sev.items())
-    files_scanned = sum(1 for _ in iter_files(args.path))
-
-    if args.json:
-        print(json.dumps({"path": args.path, "files_scanned": files_scanned, "counts": by_sev,
-                          "class_counts": by_class, "slop_score": weighted,
-                          "verdict": verdict(by_sev, weighted), "findings": findings}, indent=2))
-        sys.exit(finding_exit_code(by_sev))
-
-    sev_order = {"high": 0, "medium": 1, "low": 2}
-    rule_ids = sorted(by_rule, key=lambda rid: (sev_order[by_rule[rid][0]["sev"]], -len(by_rule[rid])))
+        groups.setdefault((f["rule"], f["sev"]), []).append(f)
+    keys = sorted(groups, key=lambda k: (ORDER.index(k[1]), -len(groups[k])))
     print(f"\n  unslop-code scan: {args.path}")
-    print(f"  files scanned: {files_scanned}   findings: {len(findings)}   slop score: {weighted}")
-    print(f"  verdict: {verdict(by_sev, weighted)}")
-    print(f"  high: {by_sev.get('high',0)}   medium: {by_sev.get('medium',0)}   low: {by_sev.get('low',0)}")
-    print(f"  bug-class: {by_class.get('bug',0)} (wrong code, fix regardless of severity)   "
+    print(f"  files scanned: {scanned}   skipped (generated/minified): {skipped}   findings: {len(findings)}   slop score: {weighted}   density: {density:.2f}")
+    print(f"  verdict: {verdict(by_sev, density)}")
+    print(f"  high: {by_sev.get('high',0)}   medium: {by_sev.get('medium',0)}   low: {by_sev.get('low',0)}   info: {by_sev.get('info',0)}")
+    if hidden:
+        print(f"  {hidden} info finding{'s' if hidden != 1 else ''} hidden (weak signals; --severity info to see them)")
+    print(f"  bug-class: {by_class.get('bug',0)} (code that may hide a failure; read each, fix the real ones)   "
           f"cosmetic: {by_class.get('cosmetic',0)} (surface giveaways)\n")
     if not findings:
         print("  No surface tells flagged. The loudest tells are structural and a regex cannot see\n"
@@ -254,21 +286,52 @@ def main():
               "  issue: build it, type-check it, run it, resolve every import. Then read the diff for\n"
               "  the rest by hand against references/tells.md.\n")
         return
-    for rid in rule_ids:
-        items = by_rule[rid]
+    for k in keys:
+        items = groups[k]
         f0 = items[0]
         print(f"  [{f0['sev'].upper()} · {f0['class']}] {f0['label']}  ({len(items)} hit{'s' if len(items)!=1 else ''})  [{f0['share']}]")
         print(f"        fix: {f0['fix']}")
         for it in items[:args.max]:
-            print(f"        {it['file']}:{it['line']}  ({it['match']})  {it['snippet']}")
+            why = f"  [{it['reason']}]" if it.get("reason") else ""
+            print(f"        {it['file']}:{it['line']}  ({it['match']})  {it['snippet']}{why}")
         if len(items) > args.max:
             print(f"        ... +{len(items) - args.max} more")
         print()
-    top = [by_rule[rid][0]['label'] for rid in rule_ids[:3]]
-    print("  Top things to change: " + "; ".join(top))
-    print("  Fix the bug-class findings first; they are wrong, not just AI-looking.")
+    print("  Top things to change: " + "; ".join(groups[k][0]['label'] for k in keys[:3]))
+    print("  Findings are leads, not verdicts. Read the bug-class ones first and fix the ones that really hide a failure.")
     print("  The big tells (boilerplate, hallucinated APIs, over-engineering) the regex cannot see:")
     print("  build / type-check / run for the hallucinated calls, read the diff for the rest. See references/tells.md.\n")
+
+def main():
+    ap = argparse.ArgumentParser(description="Scan source code for AI-written-code tells.")
+    ap.add_argument("path")
+    ap.add_argument("--severity", choices=ORDER, default="low",
+                    help="minimum severity to report (default: low; 'info' also shows weak signals)")
+    ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument("--max", type=int, default=10, help="max examples shown per rule (text mode)")
+    args = ap.parse_args()
+
+    if not os.path.exists(args.path):
+        print(f"path not found: {args.path}", file=sys.stderr); sys.exit(2)
+
+    all_findings, scanned, skipped = scan(args.path)
+    floor = ORDER.index(args.severity)
+    findings = [f for f in all_findings if ORDER.index(f["sev"]) <= floor]
+    hidden = sum(1 for f in all_findings if f["sev"] == "info") if floor < ORDER.index("info") else 0
+    by_sev, by_class = {}, {}
+    for f in findings:
+        by_sev[f["sev"]] = by_sev.get(f["sev"], 0) + 1
+        by_class[f["class"]] = by_class.get(f["class"], 0) + 1
+    weighted = sum(W[s] * n for s, n in by_sev.items())
+    density = weighted / max(scanned, 1)
+
+    if args.json:
+        print(json.dumps({"path": args.path, "files_scanned": scanned, "files_skipped_generated": skipped,
+                          "counts": by_sev, "class_counts": by_class, "slop_score": weighted,
+                          "density": round(density, 4), "info_hidden": hidden,
+                          "verdict": verdict(by_sev, density), "findings": findings}, indent=2))
+        sys.exit(finding_exit_code(by_sev))
+    print_report(args, findings, by_sev, by_class, weighted, density, scanned, skipped, hidden)
     sys.exit(finding_exit_code(by_sev))
 
 if __name__ == "__main__":

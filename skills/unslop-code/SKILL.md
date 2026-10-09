@@ -120,14 +120,22 @@ the data before reading a line. Fix that first.
 ```bash
 python3 scripts/unslop_code_scan.py <path>                 # full report + slop score
 python3 scripts/unslop_code_scan.py <path> --severity high # only the strongest signals
+python3 scripts/unslop_code_scan.py <path> --severity info # also show the weak signals
 python3 scripts/unslop_code_scan.py <path> --json          # machine-readable, for CI
 ```
 
 It scans Python, JS/TS, Java, Go, Rust, Ruby, PHP, C/C++, C#, and more; reports each finding
 with file, line, the matched text, the severity, the class (bug or cosmetic), the data share it
-carries, and the fix; and gives a slop score. The exit code is 1 when any high-severity finding exists, 0 otherwise
-(counts are in the report / JSON). Severity is how loudly a finding reads as AI; class is whether it is broken. Fix
-every bug-class finding regardless of severity.
+carries, and the fix; and gives a slop score and a density-based verdict (score per file). The
+exit code is 1 when any high-severity finding exists, 0 otherwise. Minified and generated files
+are skipped; Python docstring examples are not flagged.
+
+Findings are leads, not verdicts. Severity is how loudly a finding reads as AI; class is whether
+it might be broken. Read each bug-class finding and fix the ones that really hide a failure
+(a swallowed error nobody logs); leave the ones that are deliberate (best-effort cleanup).
+`info` findings (weak signals: `# Note:`, verb-first comments, long names) are hidden by default
+and never count toward the score; add `--severity info` to see them. Measured precision and the
+known limits: [references/precision.md](references/precision.md).
 
 **3. Read the diff for what neither step can see:** tutorial shape, over-engineering, and
 whether the code matches the repo. These are the substance tells in references/tells.md, and

@@ -96,6 +96,10 @@ def _reason(h, body, comments):
         return "best-effort cleanup call"
     return None
 
+def _reraises(h):
+    """True when a top-level statement of the handler raises; nested raises leave another path."""
+    return any(isinstance(n, ast.Raise) for n in h.body)
+
 def swallowed(tree, lines):
     """[(lineno, sev, reason)] for bare/Exception/BaseException handlers that drop the error."""
     out, comments = [], comments_by_line(lines)
@@ -103,6 +107,8 @@ def swallowed(tree, lines):
         if not isinstance(t, TRY_NODES):
             continue
         for h in t.handlers:
+            if _reraises(h):
+                continue
             broad = h.type is None or (isinstance(h.type, ast.Name) and h.type.id in BROAD)
             if not broad or not (h.type is None or _empty_body(h)):
                 continue

@@ -80,6 +80,8 @@ separates them, so they are leads for a human read, not verdicts.
   still flagged high, and minified files are skipped only by name or by line shape.
 - A long excuse comment (4+ words) demotes a swallowed handler to info, so an AI-written
   `# ignore errors because it is fine` slips down. `--severity info` shows it with its reason.
+- Handlers with a top-level `raise` (bare or `raise X from Y`) are not reported; a raise
+  nested in an `if` still is.
 - A bare `except:` is demoted only by an explicit code (`noqa: E722`, `pylint: disable=bare-except`).
 - Cleanup detection looks at the call name and its arguments (including lambdas) and `if`
   bodies; a close preceded by a lookup or assignment in the same try is not recognised.

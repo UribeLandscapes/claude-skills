@@ -70,6 +70,15 @@ class ScannerTests(unittest.TestCase):
     def test_bare_except_is_flagged(self):
         self.assert_swallowed("except:\n    recover()\n", True)
 
+    def test_bare_except_that_logs_and_reraises_is_not_flagged(self):
+        self.assert_swallowed("except:\n    log.error('failed')\n    raise\n", False)
+
+    def test_bare_except_raise_from_is_not_flagged(self):
+        self.assert_swallowed("except:\n    raise RuntimeError('wrapped') from None\n", False)
+
+    def test_conditional_reraise_is_still_flagged(self):
+        self.assert_swallowed("except:\n    if retry:\n        raise\n", True)
+
     def test_empty_body_skips_comments_and_blanks(self):
         self.assert_swallowed(
             "except BaseException as e:\n    # ignored\n\n    ...\nnext_step()\n", True

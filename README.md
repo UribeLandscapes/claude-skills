@@ -76,6 +76,8 @@ I use these as-is, so they are linked rather than copied:
 | skill-creator | Anthropic | [skills](https://github.com/anthropics/skills/tree/main/skills/skill-creator) | Apache-2.0 |
 | about 198 other ECC skills | Affaan Mustafa | [ECC skills folder](https://github.com/affaan-m/ECC/tree/main/skills) | MIT |
 
+Some of the `unslop-ui` scanner rules and its [craft floor checklist](skills/unslop-ui/references/craft-floor.md) are ideas I took from Paul Bakaus's [impeccable](https://github.com/pbakaus/impeccable) (Apache-2.0) and rewrote for this scanner.
+
 I used humanizer to write this README.
 
 The agents I use alongside these skills are in a separate repo: [claude-agents](https://github.com/UribeLandscapes/claude-agents).

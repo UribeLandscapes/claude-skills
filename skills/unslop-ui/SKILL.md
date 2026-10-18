@@ -83,6 +83,8 @@ result. Produce a deliberate one and say what you chose, or offer two or three g
 distinct directions. The value is breaking the monoculture, so vary away from the
 center on purpose.
 
+When checking the built result, load [references/craft-floor.md](references/craft-floor.md) on demand.
+
 Then, while building, avoid the specific tells in [references/tells.md](references/tells.md).
 [references/choosing-a-look.md](references/choosing-a-look.md) is a process for making the
 color/type/layout choices deliberately, written as a method rather than a prescription,
@@ -106,6 +108,8 @@ with file, line, and fix, and gives a vibe score. Exit code is 1 when any high-s
 gradients, the cream+serif combo). It cannot see layout coherence, spacing consistency,
 or whether text overflows its container, and those are also what make a site read as AI,
 so after the scan, check those by eye against the catalog.
+
+For render checks beyond the scanner, load [references/craft-floor.md](references/craft-floor.md) on demand.
 
 **Respecting intentional choices.** A line with the comment `unslop-ignore` is skipped.
 Use it when a flagged value is a real decision, so the audit stays trustworthy and does
